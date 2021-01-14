@@ -86,6 +86,8 @@ def produce_ip_fragments_and_reassemble_them(sleep_time = 0.5):
 			continue
 
 		if ip_packet.protocol != 0x06: #TCP has a protocol identifier of 0x06, since HTTP only uses TCP (only HTTP3 uses it, but, not even HTTP2 is widely used) the other protocols will be ignored
+			if ip_packet.protocol == 0x01:
+				print("ICMP packet received")
 			continue
 
 		if (ip_packet.fragment_offset == 0) and not (ip_packet.flags & 1): #fragment offset is 0 and the more fragments flag is set
