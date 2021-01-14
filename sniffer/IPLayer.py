@@ -9,6 +9,7 @@ from .PacketProducer import RAW_PACKET_QUEUE, IP_TYPE_TO_COMMON_NAME
 ip_fragment_table = {}
 IP_PRODUCER_SHUTDOWN_EVENT = threading.Event()
 IP_PAYLOADS = queue.Queue()
+IP_RECONSTRUCTION_TIME_LIMIT = 10
 
 def get_ipv4_header_struct():
 	"""Create the IPv4 struct header format for parsing"""
@@ -82,18 +83,13 @@ def produce_ip_fragments_and_reassemble_them(sleep_time = 0.5):
 		try:
 			ip_packet = IP_TYPE_PARSERS[IP_TYPE_TO_COMMON_NAME[ip_type]](packet)
 		except Exception as e:
-			print("[!!!] Invalid", IP_TYPE_TO_COMMON_NAME[ip_type], "packet received", e)
 			continue
 
 		if ip_packet.protocol != 0x06: #TCP has a protocol identifier of 0x06, since HTTP only uses TCP (only HTTP3 uses it, but, not even HTTP2 is widely used) the other protocols will be ignored
 			continue
 
-		if (ip_packet.fragment_offset == 0) and (ip_packet.flags & 1): #fragment offset is 0 and the more fragments flag is set
-			IP_PAYLOADS.put({
-					"src_ip": ip_packet.src_ip,
-					"dst_ip": ip_packet.dst_ip,
-					"data": ip_packet.content
-				})
+		if (ip_packet.fragment_offset == 0) and not (ip_packet.flags & 1): #fragment offset is 0 and the more fragments flag is set
+			IP_PAYLOADS.put(( ip_packet.src_ip, ip_packet.dst_ip, ip_packet.content ))
 		else:
 			if not ip_packet.src_ip in ip_fragment_table:
 				ip_fragment_table[ip_packet.src_ip] = {}
@@ -113,15 +109,11 @@ def produce_ip_fragments_and_reassemble_them(sleep_time = 0.5):
 			fragment_info["data"].insert(ip_packet.fragment_offset, ip_packet.content)
 			fragment_info["total_received"] += len(ip_packet.content)
 			fragment_info["last_modified"] = time.time()
-			if (ip_packet.flags & 1) == 0: #if the more fragments flag is not set
+			if not (ip_packet.flags & 1): #if the more fragments flag is not set
 				fragment_info["total_data_length"] = len(ip_packet.content) + (8*ip_packet.fragment_offset)
 
 			if fragment_info["total_data_length"] != 0 and fragment_info["total_data_length"] == fragment_info["total_received"]:
-				IP_PAYLOADS.put({
-					"src_ip": ip_packet.src_ip,
-					"dst_ip": ip_packet.dst_ip,
-					"data": b"".join(fragment_info["data"])
-				})	
+				IP_PAYLOADS.put(( ip_packet.src_ip, ip_packet.dst_ip, b"".join(fragment_info["data"]) ))	
 				del ip_fragment_table[ip_packet.src_ip][ip_packet.dst_ip][ip_packet.identification]
 
 
