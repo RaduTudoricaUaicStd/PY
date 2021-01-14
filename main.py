@@ -80,11 +80,17 @@ def stop_sniffing():
 	TCPLayer.TCP_PRODUCER_SHUTDOWN_EVENT.set()
 	HTTPParser.HTTP_PARSER_SHUTDOWN_EVENT.set()
 
+def apply_filter_on_headers(filter, headers):
+	for key, value in headers.items():
+		if filter(key+b": "+value):
+			return True
+	return False
+
 def filter_request(request):
-	return request_filters["method"](request.method) and request_filters["headers"](request.headers) and request_filters["body"](request.body)
+	return request_filters["method"](request.method) and apply_filter_on_headers(request_filters["headers"], request.headers) and request_filters["body"](request.body)
 
 def filter_response(response):
-	return response_filters["code"](response.code) and response_filters["headers"](response.headers) and response_filters["body"](response.body)
+	return response_filters["code"](response.code) and apply_filter_on_headers(response_filters["headers"], response.headers) and response_filters["body"](response.body)
 
 def format_headers(headers):
 	formated_headers = ""
@@ -120,6 +126,41 @@ def process_requests_and_responses():
 
 
 if __name__ == "__main__":
+	arg_parser = argparse.ArgumentParser(description='Sniff HTTP traffic.')
+	arg_parser.add_argument('--request-method-filter', help='Regex to filter request method')
+	arg_parser.add_argument('--request-header-filter', help='Regex to filter request headers')
+	arg_parser.add_argument('--request-body-filter', help='Regex to filter request body')
+	arg_parser.add_argument('--response-code-filter', help='Regex to filter response code')
+	arg_parser.add_argument('--response-header-filter', help='Regex to filter response headers')
+	arg_parser.add_argument('--response-body-filter', help='Regex to filter response body')
+	arg_parser.add_argument('--source-filter', help='Regex to filter the source')
+	arg_parser.add_argument('--destination-filter', help='Regex to filter the destination')
+	args = arg_parser.parse_args()
+	
+	if not args.request_method_filter is None:
+		request_filters["method"] = lambda x: len(re.findall(args.request_method_filter.encode('utf-8'), x)) > 0
+
+	if not args.request_header_filter is None:
+		request_filters["headers"] = lambda x: len(re.findall(args.request_header_filter.encode('utf-8'), x)) > 0
+
+	if not args.request_body_filter is None:
+		request_filters["body"] = lambda x: len(re.findall(args.request_body_filter.encode('utf-8'), x)) > 0
+
+	if not args.response_code_filter is None:
+		response_filters["code"] = lambda x: len(re.findall(args.response_code_filter.encode('utf-8'), x)) > 0
+
+	if not args.response_header_filter is None:
+		response_filters["headers"] = lambda x: len(re.findall(args.response_header_filter.encode('utf-8'), x)) > 0
+
+	if not args.response_body_filter is None:
+		response_filters["body"] = lambda x: len(re.findall(args.response_body_filter.encode('utf-8'), x)) > 0
+
+	if not args.source_filter is None:
+		source_filter = lambda x: len(re.findall(args.source_filter, x)) > 0
+
+	if not args.destination_filter is None:
+		destination_filter = lambda x: len(re.findall(args.destination_filter, x)) > 0
+
 	start_sniffing()
 	process_requests_and_responses()
 	stop_sniffing()
